@@ -210,11 +210,17 @@ public static class FigureTemplates
 
     /// <summary>Creates a clustermap: a heatmap with hierarchical dendrograms on the row and column margins.</summary>
     /// <param name="data">The N×M data matrix to cluster and display.</param>
-    /// <param name="rowLabels">Optional row labels.</param>
-    /// <param name="colLabels">Optional column labels.</param>
+    /// <param name="rowLabels">Optional row labels, one for each row of <paramref name="data"/> in the order it was given; the map
+    /// reorders its rows by the clustering and draws each label beside the row it names.</param>
+    /// <param name="colLabels">Optional column labels, one for each column of <paramref name="data"/> in the order it was given;
+    /// each is drawn under the column it names, wherever the clustering put it.</param>
+    /// <exception cref="ArgumentException">A list of labels has not as many labels as the matrix has rows, or columns.</exception>
     public static FigureBuilder Clustermap(double[,] data, string[]? rowLabels = null, string[]? colLabels = null)
     {
         int rows = data.GetLength(0), cols = data.GetLength(1);
+
+        ThrowIfNotOneLabelEach(rowLabels, rows, nameof(rowLabels));
+        ThrowIfNotOneLabelEach(colLabels, cols, nameof(colLabels));
 
         // Compute pairwise Euclidean distance matrices for rows and columns
         var rowDist = ComputeDistanceMatrix(data, byRow: true);
@@ -232,6 +238,10 @@ public static class FigureTemplates
             : Enumerable.Range(0, cols).ToArray();
 
         var reordered = data.Permute(rowOrder, colOrder);
+
+        // A label goes with the row or column it was given for, so it is reordered as the data is.
+        string[]? rowsAsDrawn = rowLabels is null ? null : [.. rowOrder.Select(at => rowLabels[at])];
+        string[]? colsAsDrawn = colLabels is null ? null : [.. colOrder.Select(at => colLabels[at])];
 
         var builder = Plt.Create()
             .WithSize(700, 700)
@@ -256,10 +266,32 @@ public static class FigureTemplates
         builder.AddSubPlot(GridPosition.Single(1, 1), ax =>
         {
             ax.Heatmap(reordered);
+
+            if (colsAsDrawn is not null)
+            {
+                ax.SetXTickLocator(new FixedLocator(CellCentres(cols))).SetXTickFormatter(new CategoryFormatter(colsAsDrawn));
+            }
+
+            if (rowsAsDrawn is not null)
+            {
+                // Row 0 is drawn at the top and the axis counts up from the bottom, which is what a reversed formatter is for.
+                ax.SetYTickLocator(new FixedLocator(CellCentres(rows))).SetYTickFormatter(new CategoryFormatter(rowsAsDrawn, reversed: true));
+            }
         });
 
         return builder;
     }
+
+    private static void ThrowIfNotOneLabelEach(string[]? labels, int count, string name)
+    {
+        if (labels is not null && labels.Length != count)
+        {
+            throw new ArgumentException($"'{name}' needs one label for each of the {count} it labels, and {labels.Length} were given.", name);
+        }
+    }
+
+    // The middle of each cell along an axis that counts the cells from nought: a cell is as wide as the axis counts one.
+    private static double[] CellCentres(int count) => [.. Enumerable.Range(0, count).Select(at => at + 0.5)];
 
     // Computes pairwise Euclidean distance matrix for rows or columns.
     private static double[,] ComputeDistanceMatrix(double[,] data, bool byRow)

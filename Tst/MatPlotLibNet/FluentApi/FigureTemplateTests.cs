@@ -289,4 +289,118 @@ public class FigureTemplateTests
         string svg = FigureTemplates.Clustermap(ClusterData).ToSvg();
         Assert.Contains("<svg", svg);
     }
+
+    // --- Clustermap labels ---
+
+    // Two pairs of near rows and of near columns, written so that the map must reorder them: a is near c, b is near d.
+    private static readonly double[,] Interleaved =
+    {
+        { 1.0, 2.0, 0.5 },
+        { 5.0, 0.1, 4.0 },
+        { 1.1, 1.9, 0.6 },
+        { 4.8, 0.2, 3.9 },
+    };
+
+    private static readonly string[] RowNames = ["row-a", "row-b", "row-c", "row-d"];
+    private static readonly string[] ColumnNames = ["col-x", "col-y", "col-z"];
+
+    // The labels of the heatmap panel in the order a reader meets them: rows from the top down, columns from the left.
+    private static (string[] Rows, string[] Columns) LabelsAsDrawn(double[,] data, string[]? rows, string[]? columns, out HeatmapSeries drawn)
+    {
+        var figure = FigureTemplates.Clustermap(data, rows, columns).Build();
+
+        drawn = Assert.Single(figure.SubPlots[3].Series.OfType<HeatmapSeries>());
+
+        var texts = System.Text.RegularExpressions.Regex
+            .Matches(FigureTemplates.Clustermap(data, rows, columns).ToSvg(), "<text[^>]*?x=\"([-0-9.]+)\"[^>]*?y=\"([-0-9.]+)\"[^>]*>([^<]*)</text>")
+            .Select(match => (X: double.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), Y: double.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture), Text: match.Groups[3].Value))
+            .ToArray();
+
+        return (
+            [.. texts.Where(each => each.Text.StartsWith("row-", StringComparison.Ordinal)).OrderBy(each => each.Y).Select(each => each.Text)],
+            [.. texts.Where(each => each.Text.StartsWith("col-", StringComparison.Ordinal)).OrderBy(each => each.X).Select(each => each.Text)]);
+    }
+
+    // The input row the drawn row is: the map reorders the columns as well, so a row is known by the numbers it holds, which
+    // differ from row to row here, and not by where they stand.
+    private static int InputRowOf(double[,] data, double[,] drawn, int row)
+    {
+        var held = Enumerable.Range(0, drawn.GetLength(1)).Select(column => drawn[row, column]).Order().ToArray();
+
+        for (var candidate = 0; candidate < data.GetLength(0); candidate++)
+        {
+            if (Enumerable.Range(0, data.GetLength(1)).Select(column => data[candidate, column]).Order().SequenceEqual(held))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"The drawn row {row} is none of the rows given.");
+    }
+
+    private static int InputColumnOf(double[,] data, double[,] drawn, int column)
+    {
+        var held = Enumerable.Range(0, drawn.GetLength(0)).Select(row => drawn[row, column]).Order().ToArray();
+
+        for (var candidate = 0; candidate < data.GetLength(1); candidate++)
+        {
+            if (Enumerable.Range(0, data.GetLength(0)).Select(row => data[row, candidate]).Order().SequenceEqual(held))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException($"The drawn column {column} is none of the columns given.");
+    }
+
+    /// <summary>The map reorders its rows and columns by the clustering, and a label goes with the row or column it was given for,
+    /// not with the place it stood in the input: the labels read from the top down are those of the rows as drawn.</summary>
+    [Fact]
+    public void Clustermap_Labels_FollowTheRowsAndColumnsTheyNameToWhereTheMapDrawsThem()
+    {
+        var (rows, columns) = LabelsAsDrawn(Interleaved, RowNames, ColumnNames, out var drawn);
+
+        Assert.Equal(
+            Enumerable.Range(0, 4).Select(row => RowNames[InputRowOf(Interleaved, drawn.Data, row)]),
+            rows);
+        Assert.Equal(
+            Enumerable.Range(0, 3).Select(column => ColumnNames[InputColumnOf(Interleaved, drawn.Data, column)]),
+            columns);
+    }
+
+    /// <summary>The input order is not the drawn order here, so a label that stayed where it was given would show.</summary>
+    [Fact]
+    public void Clustermap_Labels_AreTestedOnADataSetThatTheMapReorders()
+    {
+        var figure = FigureTemplates.Clustermap(Interleaved, RowNames, ColumnNames).Build();
+        var drawn = Assert.Single(figure.SubPlots[3].Series.OfType<HeatmapSeries>()).Data;
+
+        Assert.NotEqual(
+            Enumerable.Range(0, 4),
+            Enumerable.Range(0, 4).Select(row => InputRowOf(Interleaved, drawn, row)));
+    }
+
+    /// <summary>Row labels alone, or column labels alone, are as good as both: each is optional.</summary>
+    [Fact]
+    public void Clustermap_LabelsMayBeGivenForRowsOnlyOrColumnsOnly()
+    {
+        var (rows, none) = LabelsAsDrawn(Interleaved, RowNames, null, out _);
+        var (noRows, columns) = LabelsAsDrawn(Interleaved, null, ColumnNames, out _);
+
+        Assert.Equal(4, rows.Length);
+        Assert.Empty(none);
+        Assert.Empty(noRows);
+        Assert.Equal(3, columns.Length);
+    }
+
+    /// <summary>A label for a row that is not there, or none for one that is, is a mistake to be named, not drawn.</summary>
+    [Fact]
+    public void Clustermap_ALabelListOfAnotherLength_IsRefusedByName()
+    {
+        var rows = Assert.Throws<ArgumentException>(() => FigureTemplates.Clustermap(Interleaved, ["a", "b"], null));
+        var columns = Assert.Throws<ArgumentException>(() => FigureTemplates.Clustermap(Interleaved, null, ["x", "y", "z", "w"]));
+
+        Assert.Contains("rowLabels", rows.Message, StringComparison.Ordinal);
+        Assert.Contains("colLabels", columns.Message, StringComparison.Ordinal);
+    }
 }

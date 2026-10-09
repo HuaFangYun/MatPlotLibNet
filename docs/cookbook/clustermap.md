@@ -90,6 +90,30 @@ Plt.Create()
     .ToSvg();
 ```
 
+## Names beside the rows and columns
+
+`FigureTemplates.Clustermap` clusters the rows and the columns itself and takes a name for each. The names go with the rows
+and columns they were given for, wherever the clustering draws them: a name is never left standing at the place its row
+stood in the data.
+
+```csharp
+double[,] expression =
+{
+    { 1.0, 2.0, 0.5 },
+    { 5.0, 0.1, 4.0 },
+    { 1.1, 1.9, 0.6 },
+    { 4.8, 0.2, 3.9 },
+};
+
+var svg = FigureTemplates.Clustermap(
+        expression,
+        rowLabels: ["gene-a", "gene-b", "gene-c", "gene-d"],
+        colLabels: ["sample-x", "sample-y", "sample-z"])
+    .ToSvg();
+```
+
+Either list may be left out. A list with another length than the matrix has is refused, naming the parameter.
+
 ## Tree leaf convention
 
 Leaf `TreeNode.Value` must be the **zero-based original index** of the row or column in the

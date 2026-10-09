@@ -28,6 +28,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`FigureTemplates.Clustermap` draws the labels it is given.** `rowLabels` and `colLabels` were declared and documented
+  and never read, so a clustermap came without a name beside any row or column — and names written for the rows in the order
+  they were given would have gone wrong anyway, because the map reorders its rows and columns by the clustering. Each label
+  now goes with the row or column it was given for and is drawn beside it wherever the clustering puts it, and a list with
+  another length than the matrix has is refused, naming the parameter.
+
 - **The first example on the front page compiles.** The quick start in the README and on the documentation home
   page reached for a colour that is not there (`Color.Blue`; the palette is `Colors`) and called `WithLegend()`
   on the figure builder, where it does not exist — a legend belongs to an axes, which a chart reaches through
